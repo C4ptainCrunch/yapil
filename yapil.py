@@ -79,8 +79,8 @@ class Client(object):
                 msg = event['args'][1]
                 if msg[:5] == "join ":
                     self.join(msg[5:])
-                    self.privmsg(nick,'joining')
-                    self.talk(msg[5:],'bijour')
+                    self.privmsg(nick,'I am joining {}'.format(msg[5:]))
+                    self.talk(msg[5:],'Hello World')
                 else:
                     self.privmsg(nick,'PONG '+msg)
             elif event['command'] == 'ERROR':

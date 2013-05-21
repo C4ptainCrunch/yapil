@@ -1,9 +1,4 @@
-import irct0
+from yapil import Client
 
-def handler(client,event):
-    print event
-    if event == 'PRIVMSG':
-        client.privmsg('C4ptainCrunch','caca')
-
-client = irct0.Client(host='irc.freenode.net',nick='proutbot')
+client = Client(host='irc.freenode.net',nick='yapil-test')
 client.connect()
