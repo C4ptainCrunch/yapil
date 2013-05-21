@@ -8,10 +8,11 @@ class Client(object):
         self.nick = nick
         self.realname = realname
         self.socket = None
-        self.buffer = ''
         self.socket_alive = False
+        self.buffer = ''
 
     def connect(self):
+        '''Creates the connection and launches the loop'''
         self.socket_alive = True
         self.socket = socket(AF_INET, SOCK_STREAM)
         self.socket.connect((self.host, self.port))
@@ -25,6 +26,7 @@ class Client(object):
 
     @property
     def stream(self):
+        '''Polls the socket and yeild data, line per line'''
         while self.socket_alive:
             self.buffer += self.socket.recv(1024)
             pivot = self.buffer.find('\r\n')
@@ -35,9 +37,11 @@ class Client(object):
                 pivot = self.buffer.find('\r\n')
 
     def sendraw(self,data):
+        '''Send a string followed by a newline into the socket'''
         self.socket.send('{}\r\n'.format(data.strip()))
 
     def close(self,message):
+        '''Sends a quit command and closes the socket'''
         self.sendraw('QUIT :{}'.format(message))
         # TODO : The server acknowledges this
         # by sending an ERROR message to the client.
@@ -45,26 +49,33 @@ class Client(object):
         self.socket_alive = False
 
     def pong(self, data):
+        '''Sends a pong to the server'''
         self.sendraw('PONG %s' % data)
 
     def join(self, chan,password=''):
+        '''Join a chan'''
         self.sendraw('JOIN {} {}'.format(chan,password))
 
     def leave(self, chan,reason=''):
+        '''Leave a chan'''
         self.sendraw('PART {} {}'.format(chan,reason))
 
-    def topic(self, chan,topic=None):
+    def topic(self, chan,topic=''):
+        '''Ask for the current topic or set it (if topic!='')'''
         if topic:
             topic = ':'+topic
         self.sendraw('TOPIC {} {}'.format(chan,topic))
 
     def privmsg(self, recipient, message):
+        '''Send a private message'''
         self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
 
     def talk(self, chan, message):
+        '''Talk on a chan'''
         self.sendraw('PRIVMSG {} :{}'.format(chan, message))
 
     def loop(self):
+        '''IRC loop : gets a line from the stream and does some things with it'''
         for line in self.stream:
             event = self.tokenize(line)
             print event
@@ -88,6 +99,7 @@ class Client(object):
                 raise IRCerror(event)
 
     def tokenize(self, data):
+        '''Tokenize a line from the socket into : a prefix, a command and some args'''
         prefix = ''
         trailing = []
 
