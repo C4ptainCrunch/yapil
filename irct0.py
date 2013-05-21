@@ -1,84 +1,94 @@
 from socket import socket, AF_INET, SOCK_STREAM
 
-class IRC(object):
+class Client(object):
 
     def __init__(self, host=None, port=6667, nick=None, realname=None):
         self.host = host
         self.port = port
         self.nick = nick
         self.realname = realname
-        self.socket = socket(AF_INET, SOCK_STREAM)
+        self.socket = None
         self.buffer = ''
+        self.socket_alive = False
 
     def connect(self):
-        self.realname = self.realname or self.nick
-        assert(self.host and self.port and self.nick and self.realname)
+        self.socket_alive = True
+        self.socket = socket(AF_INET, SOCK_STREAM)
         self.socket.connect((self.host, self.port))
         self.socket.send("NICK %s\r\n" % self.nick)
         self.socket.send("USER %s %s bla :%s\r\n" % (self.nick, self.host, self.realname))
+        try:
+            self.loop()
+        except (KeyboardInterrupt, SystemExit, IRCerror):
+            print "\n"+"Recieved end signal. Exiting"
+            self.close('Quitting')
 
+    @property
     def stream(self):
-        self.buffer += self.socket.recv(1024)
-        while True:
+        while self.socket_alive:
+            self.buffer += self.socket.recv(1024)
             pivot = self.buffer.find('\r\n')
             while pivot >= 0:
-
-                if pivot >= 0:
-                    data, self.buffer = (self.buffer[:pivot],
-                                         self.buffer[pivot + 2:])
-                    event = Event(data)
-                    if event.type == 'PING':
-                        self.ping(event.msg)
-                    else:
-                        yield Event(data)
+                data = self.buffer[:pivot]
+                self.buffer = self.buffer[pivot + 2:]
+                yield data
                 pivot = self.buffer.find('\r\n')
-            self.buffer += self.socket.recv(1024)
 
-    def ping(self, data):
-        self.socket.send('PONG %s\r\n' % data)
+    def sendraw(self,data):
+        self.socket.send('{}\r\n'.format(data.strip()))
 
-    def privmsg(self, recipient, data):
-        self.socket.send('PRIVMSG %s :%s\r\n' % (recipient, data))
-
-    def close(self):
+    def close(self,message):
+        self.sendraw('QUIT :{}'.format(message))
+        # TODO : The server acknowledges this
+        # by sending an ERROR message to the client.
         self.socket.close()
+        self.socket_alive = False
 
-    def communicate(self,event):
-        response=Response(self)
-        self.handler(response,event)
+    def pong(self, data):
+        self.sendraw('PONG %s' % data)
 
-    def loop(self,handler=lambda x:None):
-        self.handler = handler
-        self.connect()
-        for event in self.stream():
-            if '.freenode.net' in event.prefix and 'End of /MOTD command' in event.args[1]:
-                self.communicate('CONNECTED')
+    def join(chan,passord=''):
+        self.sendraw('JOIN {} {}'.format(chan,password))
+
+    def leave(chan,reason=''):
+        self.sendraw('PART {} {}'.format(chan,reason))
+
+    def topic(chan,topic=None):
+        if topic:
+            topic = ':'+topic
+
+        self.sendraw('TOPIC {} {}'.format(chan,topic))
+
+    def privmsg(self, recipient, message):
+        self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
+
+    def talk(self, chan, message):
+        self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
+
+    def loop(self):
+        for line in self.stream:
+            event = self.tokenize(line)
+            print event
+            if event['command'] == 'PING':
+                msg = ''.join(event['args'])
+                self.pong(msg)
+            elif '.freenode.net' in event['prefix'] and 'End of /MOTD command' in event['args'][1]:
                 print('Connected.')
-            elif event.type == 'PRIVMSG':
-                self.communicate('PRIVMSG')
-                #self.privmsg(event.nick, event.msg)
-            elif event.type == 'ERROR':
+            elif event['command'] == 'PRIVMSG':
+                nick = event['prefix'].split('!', 1)[0]
+                where = event['args'][0]
+                msg = event['args'][1]
+                self.privmsg(nick,'Re: '+msg)
+            elif event['command'] == 'ERROR':
                 print(event)
-                self.close()
+                raise IRCerror(event)
 
-
-class Response(object):
-    def __init__(self, client):
-        self.client = client
-    def privmsg(self,user,message):
-        self.client.privmsg(user,message)
-
-class Event(object):
-
-    def __init__(self, data):
-        """Breaks a message from an IRC server into its prefix, command, and arguments.
-        """
+    def tokenize(self, data):
         prefix = ''
         trailing = []
-        self.data = data
 
         if not data:
-           raise IRCBadMessage("Empty line.")
+           return {'type' : 'empty'}
         if data[0] == ':':
             prefix, data = data[1:].split(' ', 1)
         if data.find(' :') != -1:
@@ -89,19 +99,10 @@ class Event(object):
             args = data.split()
         command = args.pop(0)
 
-        self.prefix, self.command, self.args = prefix, command, args
-        self.type = self.command
+        return {'prefix' : prefix,
+            'command' : command,
+            'args' : args
+            }
 
-        self.nick = None
-        self.where = None
-        self.msg = None
-
-        if self.type == 'PRIVMSG':
-            self.nick = self.prefix.split('!', 1)[0]
-            self.where = self.args[0]
-            self.msg = self.args[1]
-        if self.type == 'PING':
-            self.msg = ''.join(self.args)
-
-    def __str__(self):
-        return '<Event %s>' % repr((self.prefix, self.command, self.args))
+class IRCerror(BaseException):
+    pass

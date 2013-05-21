@@ -5,5 +5,5 @@ def handler(client,event):
     if event == 'PRIVMSG':
         client.privmsg('C4ptainCrunch','caca')
 
-irc = irct0.IRC(host='irc.freenode.net',nick='proutbot')
-irc.loop(handler)
+client = irct0.Client(host='irc.freenode.net',nick='proutbot')
+client.connect()
