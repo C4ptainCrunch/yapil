@@ -1,4 +1,4 @@
-from socket import socket, AF_INET, SOCK_STREAM
+import socket
 
 class Client(object):
 
@@ -14,8 +14,7 @@ class Client(object):
     def connect(self):
         '''Creates the connection and launches the loop'''
         self.socket_alive = True
-        self.socket = socket(AF_INET, SOCK_STREAM)
-        self.socket.connect((self.host, self.port))
+        self.socket = socket.create_connection((self.host, self.port))
         self.sendraw("NICK {}".format(self.nick))
         self.sendraw("USER {} {} bla :{}".format(self.nick, self.host, self.realname))
         try:
@@ -28,7 +27,7 @@ class Client(object):
     def stream(self):
         '''Polls the socket and yeild data, line per line'''
         while self.socket_alive:
-            self.buffer += self.socket.recv(1024)
+            self.buffer += self.socket.recv(4096)
             pivot = self.buffer.find('\r\n')
             while pivot >= 0:
                 data = self.buffer[:pivot]
