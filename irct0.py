@@ -15,8 +15,8 @@ class Client(object):
         self.socket_alive = True
         self.socket = socket(AF_INET, SOCK_STREAM)
         self.socket.connect((self.host, self.port))
-        self.socket.send("NICK %s\r\n" % self.nick)
-        self.socket.send("USER %s %s bla :%s\r\n" % (self.nick, self.host, self.realname))
+        self.sendraw("NICK {}".format(self.nick))
+        self.sendraw("USER {} {} bla :{}".format(self.nick, self.host, self.realname))
         try:
             self.loop()
         except (KeyboardInterrupt, SystemExit, IRCerror):
@@ -56,7 +56,6 @@ class Client(object):
     def topic(chan,topic=None):
         if topic:
             topic = ':'+topic
-
         self.sendraw('TOPIC {} {}'.format(chan,topic))
 
     def privmsg(self, recipient, message):
