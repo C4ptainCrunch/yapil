@@ -71,13 +71,13 @@ class Client(object):
             if event['command'] == 'PING':
                 msg = ''.join(event['args'])
                 self.pong(msg)
-            elif '.freenode.net' in event['prefix'] and 'End of /MOTD command' in event['args'][1]:
-                print('Connected.')
+            elif 'End of /MOTD command' in event['args'][1]:
+                print('Realy connected')
             elif event['command'] == 'PRIVMSG':
                 nick = event['prefix'].split('!', 1)[0]
                 where = event['args'][0]
                 msg = event['args'][1]
-                self.privmsg(nick,'Re: '+msg)
+                self.privmsg(nick,'PONG '+msg)
             elif event['command'] == 'ERROR':
                 print(event)
                 raise IRCerror(event)
