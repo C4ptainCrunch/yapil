@@ -47,13 +47,13 @@ class Client(object):
     def pong(self, data):
         self.sendraw('PONG %s' % data)
 
-    def join(chan,passord=''):
+    def join(self, chan,password=''):
         self.sendraw('JOIN {} {}'.format(chan,password))
 
-    def leave(chan,reason=''):
+    def leave(self, chan,reason=''):
         self.sendraw('PART {} {}'.format(chan,reason))
 
-    def topic(chan,topic=None):
+    def topic(self, chan,topic=None):
         if topic:
             topic = ':'+topic
         self.sendraw('TOPIC {} {}'.format(chan,topic))
@@ -62,7 +62,7 @@ class Client(object):
         self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
 
     def talk(self, chan, message):
-        self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
+        self.sendraw('PRIVMSG {} :{}'.format(chan, message))
 
     def loop(self):
         for line in self.stream:
@@ -71,13 +71,18 @@ class Client(object):
             if event['command'] == 'PING':
                 msg = ''.join(event['args'])
                 self.pong(msg)
-            elif 'End of /MOTD command' in event['args'][1]:
-                print('Realy connected')
+            # elif 'End of /MOTD command' in event['args'][1]:
+            #     print('Realy connected')
             elif event['command'] == 'PRIVMSG':
                 nick = event['prefix'].split('!', 1)[0]
                 where = event['args'][0]
                 msg = event['args'][1]
-                self.privmsg(nick,'PONG '+msg)
+                if msg[:5] == "join ":
+                    self.join(msg[5:])
+                    self.privmsg(nick,'joining')
+                    self.talk(msg[5:],'bijour')
+                else:
+                    self.privmsg(nick,'PONG '+msg)
             elif event['command'] == 'ERROR':
                 print(event)
                 raise IRCerror(event)
@@ -100,8 +105,7 @@ class Client(object):
 
         return {'prefix' : prefix,
             'command' : command,
-            'args' : args
-            }
+            'args' : args}
 
 class IRCerror(BaseException):
     pass
