@@ -1,4 +1,5 @@
 import socket
+from spool import coroutine
 
 class Client(object):
 
@@ -7,26 +8,22 @@ class Client(object):
         self.port = port
         self.nick = nick
         self.realname = realname
-        self.socket = None
-        self.socket_alive = False
-        self.buffer = ''
 
+        self.child = self.connect()
+
+    @coroutine
     def connect(self):
-        '''Creates the connection and launches the loop'''
-        self.socket_alive = True
+        parent = coroutine.self()
         self.socket = socket.create_connection((self.host, self.port))
         self.sendraw("NICK {}".format(self.nick))
         self.sendraw("USER {} {} bla :{}".format(self.nick, self.host, self.realname))
-        try:
-            self.loop()
-        except (KeyboardInterrupt, SystemExit, IRCerror):
-            print "\n"+"Recieved end signal. Exiting"
-            self.close('Quitting')
+        self.loop(parent)
+
 
     @property
     def stream(self):
-        '''Polls the socket and yeild data, line per line'''
-        while self.socket_alive:
+        self.buffer = ''
+        while True:
             self.buffer += self.socket.recv(4096)
             pivot = self.buffer.find('\r\n')
             while pivot >= 0:
@@ -45,7 +42,6 @@ class Client(object):
         # TODO : The server acknowledges this
         # by sending an ERROR message to the client.
         self.socket.close()
-        self.socket_alive = False
 
     def pong(self, data):
         '''Sends a pong to the server'''
@@ -73,7 +69,7 @@ class Client(object):
         '''Talk on a chan'''
         self.sendraw('PRIVMSG {} :{}'.format(chan, message))
 
-    def loop(self):
+    def loop(self,parent):
         '''IRC loop : gets a line from the stream and does some things with it'''
         for line in self.stream:
             event = self.tokenize(line)
@@ -83,19 +79,11 @@ class Client(object):
                 self.pong(msg)
             # elif 'End of /MOTD command' in event['args'][1]:
             #     print('Realy connected')
-            elif event['command'] == 'PRIVMSG':
-                nick = event['prefix'].split('!', 1)[0]
-                where = event['args'][0]
-                msg = event['args'][1]
-                if msg[:5] == "join ":
-                    self.join(msg[5:])
-                    self.privmsg(nick,'I am joining {}'.format(msg[5:]))
-                    self.talk(msg[5:],'Hello World')
-                else:
-                    self.privmsg(nick,'PONG '+msg)
             elif event['command'] == 'ERROR':
                 print(event)
                 raise IRCerror(event)
+            if not parent.alive():
+                break
 
     def tokenize(self, data):
         '''Tokenize a line from the socket into : a prefix, a command and some args'''
