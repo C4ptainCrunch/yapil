@@ -4,44 +4,15 @@ from spool import coroutine
 class Client(object):
 
     def __init__(self, host=None, port=6667, nick=None, realname=None):
-        self.host = host
-        self.port = port
-        self.nick = nick
-        self.realname = realname
+        self.loop = loop(host,port,nick,realname)
 
-        self.child = self.connect()
-
-    @coroutine
-    def connect(self):
-        parent = coroutine.self()
-        self.socket = socket.create_connection((self.host, self.port))
-        self.sendraw("NICK {}".format(self.nick))
-        self.sendraw("USER {} {} bla :{}".format(self.nick, self.host, self.realname))
-        self.loop(parent)
-
-
-    @property
-    def stream(self):
-        self.buffer = ''
-        while True:
-            self.buffer += self.socket.recv(4096)
-            pivot = self.buffer.find('\r\n')
-            while pivot >= 0:
-                data = self.buffer[:pivot]
-                self.buffer = self.buffer[pivot + 2:]
-                yield data
-                pivot = self.buffer.find('\r\n')
+    def __del__(self):
+        print "I am being deleted"
+        self.loop.close()
 
     def sendraw(self,data):
         '''Send a string followed by a newline into the socket'''
-        self.socket.send('{}\r\n'.format(data.strip()))
-
-    def close(self,message):
-        '''Sends a quit command and closes the socket'''
-        self.sendraw('QUIT :{}'.format(message))
-        # TODO : The server acknowledges this
-        # by sending an ERROR message to the client.
-        self.socket.close()
+        self.loop.put('{}\r\n'.format(data.strip()))
 
     def pong(self, data):
         '''Sends a pong to the server'''
@@ -69,42 +40,64 @@ class Client(object):
         '''Talk on a chan'''
         self.sendraw('PRIVMSG {} :{}'.format(chan, message))
 
-    def loop(self,parent):
-        '''IRC loop : gets a line from the stream and does some things with it'''
-        for line in self.stream:
-            event = self.tokenize(line)
-            print event
-            if event['command'] == 'PING':
-                msg = ''.join(event['args'])
-                self.pong(msg)
-            # elif 'End of /MOTD command' in event['args'][1]:
-            #     print('Realy connected')
-            elif event['command'] == 'ERROR':
-                print(event)
-                raise IRCerror(event)
-            if not parent.alive():
-                break
 
-    def tokenize(self, data):
-        '''Tokenize a line from the socket into : a prefix, a command and some args'''
-        prefix = ''
-        trailing = []
+@coroutine
+def loop(host,port,nick,realname):
+    master = coroutine.self()
+    mysocket = socket.create_connection((host, port))
 
-        if not data:
-           return {'type' : 'empty'}
-        if data[0] == ':':
-            prefix, data = data[1:].split(' ', 1)
-        if data.find(' :') != -1:
-            data, trailing = data.split(' :', 1)
-            args = data.split()
-            args.append(trailing)
-        else:
-            args = data.split()
-        command = args.pop(0)
+    mysocket.send("NICK {}\r\n".format(nick))
+    mysocket.send("USER {} {} bla :{}\r\n".format(nick, host, realname))
 
-        return {'prefix' : prefix,
-            'command' : command,
-            'args' : args}
+    stream = streamize(mysocket, master)
 
-class IRCerror(BaseException):
-    pass
+    for line in stream:
+
+        event = tokenize(line)
+        if line == 'QUIT':
+            mysocket.send('QUIT :{}\r\n'.format('quiting'))
+        elif event['command'] == 'PING':
+            msg = ''.join(event['args'])
+            #self.pong(msg)
+            mysocket.send('PONG %s' % msg)
+        elif event['command'] == 'ERROR':
+            print(event)
+            break
+        put = master.get()
+        if put:
+            mysocket.send(put)
+
+    mysocket.close()
+
+
+def tokenize(data):
+    '''Tokenize a line from the socket into : a prefix, a command and some args'''
+    prefix = ''
+    trailing = []
+
+    if not data:
+       return {'type' : 'empty'}
+    if data[0] == ':':
+        prefix, data = data[1:].split(' ', 1)
+    if data.find(' :') != -1:
+        data, trailing = data.split(' :', 1)
+        args = data.split()
+        args.append(trailing)
+    else:
+        args = data.split()
+    command = args.pop(0)
+
+    return {'prefix' : prefix,
+        'command' : command,
+        'args' : args}
+
+def streamize(socket, master):
+    buffer = ''
+    while master.alive():
+        buffer += socket.recv(4096)
+        pivot = buffer.find('\r\n')
+        while pivot >= 0:
+            data = buffer[:pivot]
+            buffer = buffer[pivot + 2:]
+            yield data
+            pivot = buffer.find('\r\n')
