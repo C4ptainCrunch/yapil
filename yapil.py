@@ -1,17 +1,22 @@
 import socket
 from spool import coroutine
+from time import sleep
 
 class Client(object):
 
     def __init__(self, host=None, port=6667, nick=None, realname=None):
         self.loop = loop(host,port,nick,realname)
+        # TODO : make __init__ blocking untill connection is established
 
     def __del__(self):
-        print "I am being deleted"
+        print "Queue is beeing emptied..."
+        # TODO : wait untill queue is empty instead of sleep
+        sleep(20)
+        print "Stoping loop"
         self.loop.close()
+        print "Bye"
 
     def sendraw(self,data):
-        '''Send a string followed by a newline into the socket'''
         self.loop.put('{}\r\n'.format(data.strip()))
 
     def pong(self, data):
@@ -32,13 +37,10 @@ class Client(object):
             topic = ':'+topic
         self.sendraw('TOPIC {} {}'.format(chan,topic))
 
-    def privmsg(self, recipient, message):
-        '''Send a private message'''
+    def say(self, recipient, message):
+        '''Send a message to a user/channel'''
         self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
 
-    def talk(self, chan, message):
-        '''Talk on a chan'''
-        self.sendraw('PRIVMSG {} :{}'.format(chan, message))
 
 
 @coroutine
@@ -48,7 +50,8 @@ def loop(host,port,nick,realname):
 
     mysocket.send("NICK {}\r\n".format(nick))
     mysocket.send("USER {} {} bla :{}\r\n".format(nick, host, realname))
-
+    # TODO : replace sleep by better connexion detection
+    sleep(10)
     stream = streamize(mysocket, master)
 
     for line in stream:
@@ -58,11 +61,11 @@ def loop(host,port,nick,realname):
             mysocket.send('QUIT :{}\r\n'.format('quiting'))
         elif event['command'] == 'PING':
             msg = ''.join(event['args'])
-            #self.pong(msg)
             mysocket.send('PONG %s' % msg)
         elif event['command'] == 'ERROR':
             print(event)
             break
+
         put = master.get()
         if put:
             mysocket.send(put)
