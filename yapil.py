@@ -4,17 +4,15 @@ from time import sleep
 
 class Client(object):
 
-    def __init__(self, host=None, port=6667, nick=None, realname=None):
-        self.loop = loop(host,port,nick,realname)
+    def __init__(self, host=None, port=6667, nick=None, realname=None, timeout=0.2):
+        self.handlers = []
+        self.loop = loop(host,port,nick,realname,timeout)
         # TODO : make __init__ blocking untill connection is established
 
     def __del__(self):
-        print "Queue is beeing emptied..."
-        # TODO : wait untill queue is empty instead of sleep
-        sleep(20)
-        print "Stoping loop"
-        self.loop.close()
-        print "Bye"
+        print "SIGSTOP signal sent, waiting for children to die"
+        self.loop.put('SIGSTOP')
+
 
     def sendraw(self,data):
         self.loop.put('{}\r\n'.format(data.strip()))
@@ -41,36 +39,70 @@ class Client(object):
         '''Send a message to a user/channel'''
         self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
 
+    def say(self, nick):
+        self.sendraw('NICK {}'.format(nick))
+
 
 
 @coroutine
-def loop(host,port,nick,realname):
+def loop(host,port,nick,realname,timeout):
     master = coroutine.self()
-    mysocket = socket.create_connection((host, port))
 
-    mysocket.send("NICK {}\r\n".format(nick))
-    mysocket.send("USER {} {} bla :{}\r\n".format(nick, host, realname))
-    # TODO : replace sleep by better connexion detection
-    sleep(10)
-    stream = streamize(mysocket, master)
+    try:
+        mysocket = socket.create_connection((host, port),timeout)
 
-    for line in stream:
+        mysocket.send("NICK {}\r\n".format(nick))
+        mysocket.send("USER {} {} bla :{}\r\n".format(nick, host, realname))
+        # TODO : make connexion detection and throw an event
+        # wait for a [001-004] numeric response and send events
+        # see http://tools.ietf.org/html/rfc2812#section-5.1
 
-        event = tokenize(line)
-        if line == 'QUIT':
-            mysocket.send('QUIT :{}\r\n'.format('quiting'))
-        elif event['command'] == 'PING':
-            msg = ''.join(event['args'])
-            mysocket.send('PONG %s' % msg)
-        elif event['command'] == 'ERROR':
-            print(event)
-            break
+        buffer = ''
+        send = None
 
-        put = master.get()
-        if put:
-            mysocket.send(put)
+        while True:
+            try:
+                buffer += mysocket.recv(1024)
+                pivot = buffer.find('\r\n')
+                while pivot >= 0:
+                    data = buffer[:pivot]
+                    buffer = buffer[pivot + 2:]
+                    handle_line(data,mysocket)
+                    pivot = buffer.find('\r\n')
+            except socket.timeout:
+                pass
 
-    mysocket.close()
+            try:
+                if not send:
+                    send = master.get(block=False)
+                if send == 'SIGSTOP':
+                    # TODO : get (with timeout?) one more message after SIGSTOP for the QUIT message
+                    break
+                elif send:
+                    mysocket.send(send)
+                    send = None
+            except socket.timeout:
+                pass
+
+    except Exception:
+        raise
+    finally:
+        mysocket.close()
+
+
+def handle_line(line,mysocket):
+    # TODO : get rid of mysocket param and use the Client API
+    print line
+    event = tokenize(line)
+    # TODO : send events to a thread to be treated
+    if event['command'] == 'PING':
+        msg = ''.join(event['args'])
+        mysocket.send('PONG %s' % msg)
+    elif event['command'] == 'PRIVMSG':
+        pass
+    elif event['command'] == 'ERROR':
+        print 'Error !  '
+
 
 
 def tokenize(data):
@@ -93,14 +125,3 @@ def tokenize(data):
     return {'prefix' : prefix,
         'command' : command,
         'args' : args}
-
-def streamize(socket, master):
-    buffer = ''
-    while master.alive():
-        buffer += socket.recv(4096)
-        pivot = buffer.find('\r\n')
-        while pivot >= 0:
-            data = buffer[:pivot]
-            buffer = buffer[pivot + 2:]
-            yield data
-            pivot = buffer.find('\r\n')
