@@ -1,6 +1,7 @@
 import socket
-from spool import coroutine
+from spool import coroutine, go
 from time import sleep
+import multiprocessing
 
 class Client(object):
 
@@ -39,15 +40,18 @@ class Client(object):
         '''Send a message to a user/channel'''
         self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
 
-    def say(self, nick):
+    def nick(self, nick):
         self.sendraw('NICK {}'.format(nick))
 
 
 
 @coroutine
 def loop(host,port,nick,realname,timeout):
+    from spool import coroutine, go
     master = coroutine.self()
-
+    queue = master._in
+    cc = Channel(queue)
+    go(ping_handler)(cc)
     try:
         mysocket = socket.create_connection((host, port),timeout)
 
@@ -58,7 +62,6 @@ def loop(host,port,nick,realname,timeout):
         # see http://tools.ietf.org/html/rfc2812#section-5.1
 
         buffer = ''
-        send = None
 
         while True:
             try:
@@ -67,20 +70,22 @@ def loop(host,port,nick,realname,timeout):
                 while pivot >= 0:
                     data = buffer[:pivot]
                     buffer = buffer[pivot + 2:]
-                    handle_line(data,mysocket)
+                    print data
+                    handle_line(data,queue,cc)
                     pivot = buffer.find('\r\n')
             except socket.timeout:
                 pass
 
             try:
-                if not send:
-                    send = master.get(block=False)
-                if send == 'SIGSTOP':
+                if queue.empty():
+                    continue
+
+                line = queue.get()
+                if line == 'SIGSTOP':
                     # TODO : get (with timeout?) one more message after SIGSTOP for the QUIT message
                     break
-                elif send:
-                    mysocket.send(send)
-                    send = None
+                else:
+                    mysocket.send(line)
             except socket.timeout:
                 pass
 
@@ -90,18 +95,20 @@ def loop(host,port,nick,realname,timeout):
         mysocket.close()
 
 
-def handle_line(line,mysocket):
-    # TODO : get rid of mysocket param and use the Client API
-    print line
-    event = tokenize(line)
-    # TODO : send events to a thread to be treated
-    if event['command'] == 'PING':
-        msg = ''.join(event['args'])
-        mysocket.send('PONG %s' % msg)
-    elif event['command'] == 'PRIVMSG':
-        pass
-    elif event['command'] == 'ERROR':
-        print 'Error !  '
+def handle_line(line,own_queue,cc):
+    print 'Handle_line got : '+line[:10]
+    event = eventize(line)
+    if event:
+        print 'succesfull eventize, pushing event'
+        cc.from_master.put(event)
+
+    # if event['command'] == 'PING':
+    #     msg = ''.join(event['args'])
+    #     own_queue.put('PONG %s' % msg)
+    # elif event['command'] == 'PRIVMSG':
+    #     own_queue.put('PRIVMSG {} :{}\r\n'.format('C4ptainCrunch', 'Salut !'))
+    # elif event['command'] == 'ERROR':
+    #     print 'Error !  '
 
 
 
@@ -125,3 +132,37 @@ def tokenize(data):
     return {'prefix' : prefix,
         'command' : command,
         'args' : args}
+
+
+def ping_handler(client):
+    for ping in client.listen_ping():
+        print 'handling ping'
+        client.pong(ping.msg)
+
+class Channel(object):
+    def __init__(self, to_master):
+        self.to_master = to_master
+        self.from_master = multiprocessing.Queue()
+    def listen_ping(self):
+        while True:
+            event = self.from_master.get()
+            if isinstance(event, PingEvent):
+                print 'yeilding ping event'
+                yield event
+    def pong(self,msg):
+        print 'sending pong'
+        self.to_master.put('PONG %s\r\n' % msg)
+
+
+def eventize(line):
+    tokenized = tokenize(line)
+    if tokenized['command'] == 'PING':
+        print 'eventize recognized a ping'
+        return PingEvent(tokenized)
+
+class Event:
+    pass
+
+class PingEvent(Event):
+    def __init__(self, tokenized):
+        self.msg = ''.join(tokenized['args'])
