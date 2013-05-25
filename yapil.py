@@ -96,21 +96,9 @@ def loop(host,port,nick,realname,timeout):
 
 
 def handle_line(line,own_queue,cc):
-    print 'Handle_line got : '+line[:10]
     event = eventize(line)
     if event:
-        print 'succesfull eventize, pushing event'
         cc.from_master.put(event)
-
-    # if event['command'] == 'PING':
-    #     msg = ''.join(event['args'])
-    #     own_queue.put('PONG %s' % msg)
-    # elif event['command'] == 'PRIVMSG':
-    #     own_queue.put('PRIVMSG {} :{}\r\n'.format('C4ptainCrunch', 'Salut !'))
-    # elif event['command'] == 'ERROR':
-    #     print 'Error !  '
-
-
 
 def tokenize(data):
     '''Tokenize a line from the socket into : a prefix, a command and some args'''
@@ -136,29 +124,70 @@ def tokenize(data):
 
 def ping_handler(client):
     for ping in client.listen_ping():
-        print 'handling ping'
         client.pong(ping.msg)
 
 class Channel(object):
     def __init__(self, to_master):
         self.to_master = to_master
         self.from_master = multiprocessing.Queue()
-    def listen_ping(self):
+
+    @property
+    def events(self):
         while True:
-            event = self.from_master.get()
-            if isinstance(event, PingEvent):
-                print 'yeilding ping event'
+            yield self.from_master.get()
+
+    def listen_ping(self):
+        for event in self.events:
+            if isinstance(event, PingEvent): yield event
+
+    def listen_private(self):
+        for event in self.events:
+            if isinstance(event, PrivmsgEvent):
                 yield event
-    def pong(self,msg):
-        print 'sending pong'
-        self.to_master.put('PONG %s\r\n' % msg)
+
+    def sendraw(self,data):
+        self.to_master.put('{}\r\n'.format(data))
+
+    def pong(self, data):
+        '''Sends a pong to the server'''
+        self.sendraw('PONG %s' % data)
+
+    def join(self, chan,password=''):
+        '''Join a chan'''
+        self.sendraw('JOIN {} {}'.format(chan,password))
+
+    def leave(self, chan,reason=''):
+        '''Leave a chan'''
+        self.sendraw('PART {} {}'.format(chan,reason))
+
+    def topic(self, chan,topic=''):
+        '''Ask for the current topic or set it (if topic!='')'''
+        if topic:
+            topic = ':'+topic
+        self.sendraw('TOPIC {} {}'.format(chan,topic))
+
+    def say(self, recipient, message):
+        '''Send a message to a user/channel'''
+        self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
+
+    def nick(self, nick):
+        self.sendraw('NICK {}'.format(nick))
 
 
 def eventize(line):
     tokenized = tokenize(line)
     if tokenized['command'] == 'PING':
-        print 'eventize recognized a ping'
         return PingEvent(tokenized)
+    elif tokenized['command'] == 'PRIVMSG':
+        print tokenized
+        if not is_chan(tokenized['args'][0]):
+            print 'returning a privmsg'
+            return PrivmsgEvent(tokenized)
+        else:
+            print 'Not handeld - chan message'
+
+def is_chan(name):
+    return name[0] in ('&', '#', '+', '!')
 
 class Event:
     pass
@@ -166,3 +195,8 @@ class Event:
 class PingEvent(Event):
     def __init__(self, tokenized):
         self.msg = ''.join(tokenized['args'])
+
+class PrivmsgEvent(Event):
+    def __init__(self, tokenized):
+        self.nick = tokenized['prefix'].split('!', 1)[0]
+        self.msg = tokenized['args'][1]
