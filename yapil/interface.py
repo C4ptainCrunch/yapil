@@ -53,5 +53,8 @@ class Client(object):
         '''Send a message to a user/channel'''
         self.sendraw('PRIVMSG {} :{}'.format(recipient, message))
 
+    def action(self,recipient, message):
+        self.say(recipient,'\x01ACTION '+message)
+
     def nick(self, nick):
         self.sendraw('NICK {}'.format(nick))
