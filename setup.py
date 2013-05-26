@@ -7,6 +7,8 @@ classifiers = [
     'License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)',
     ]
 
+requirements = [i.strip() for i in open("requirements.txt").readlines()]
+
 setup(
     name='Yapil',
     description='Yet another python IRC lib',
@@ -19,6 +21,6 @@ setup(
     packages=['yapil',],
     license='AGPLv3+ : GNU Affero General Public License version 3 or later',
     long_description=open('README.rst').read(),
-    install_requires=["spool >= 0.0.1",],
+    install_requires=requirements,
     classifiers=classifiers,
 )
