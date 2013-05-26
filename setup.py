@@ -9,7 +9,7 @@ classifiers = [
 
 setup(
     name='Yapil',
-    description='Yet another python IRC lib'
+    description='Yet another python IRC lib',
     version='0.1dev',
     url='https://github.com/C4ptainCrunch/yapil/',
     author='Nikita Marchant',
