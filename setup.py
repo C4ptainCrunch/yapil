@@ -28,7 +28,7 @@ for item in parsed_req:
 setup(
     name='Yapil',
     description='Yet another python IRC lib',
-    version='0.1dev',
+    version='0.1.1dev',
     url='https://github.com/C4ptainCrunch/yapil/',
     author='Nikita Marchant',
     author_email='nikita.marchant@gmail.com',
