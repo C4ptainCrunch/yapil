@@ -1,4 +1,5 @@
 from distutils.core import setup
+from pip.req import parse_requirements
 
 classifiers = [
     'Topic :: Communications :: Chat :: Internet Relay Chat',
@@ -9,7 +10,20 @@ classifiers = [
     'Topic :: Software Development :: Libraries :: Python Modules',
     ]
 
-requirements = [i.strip() for i in open("requirements.txt").readlines()]
+parsed_req = parse_requirements("requirements.txt")
+
+requirements =  []
+dependency_links = []
+
+for item in parsed_req:
+    if item.url:
+        uri = "{}#egg={}".format(item.url,item.req)
+        dependency_links.append(uri)
+        req = '-'.join(str(item.req).split('-')[:-1])
+        requirements.append(req)
+    else:
+        requirements.append(str(item.req))
+
 
 setup(
     name='Yapil',
@@ -24,5 +38,6 @@ setup(
     license='AGPLv3+ : GNU Affero General Public License version 3 or later',
     long_description=open('README.rst').read(),
     install_requires=requirements,
+    dependency_links=dependency_links,
     classifiers=classifiers,
 )
