@@ -2,15 +2,21 @@ import events
 
 def eventize(line):
     tokenized = tokenize(line)
-    if tokenized['command'] == 'PING':
-        return events.Ping(tokenized)
+    event_type = events.BaseEvent
+    if tokenized['command'].decode().isnumeric():
+        event_type = events.NumericReply
+    elif tokenized['command'] == 'PING':
+        event_type =  events.Ping
     elif tokenized['command'] == 'PRIVMSG':
         print tokenized
         if not is_chan(tokenized['args'][0]):
             print 'returning a privmsg'
-            return events.Privmsg(tokenized)
+            event_type = events.Privmsg
         else:
             print 'Not handeld - chan message'
+
+    if not event_type == events.BaseEvent:
+        return event_type(tokenized)
 
 def is_chan(name):
     return name[0] in ('&', '#', '+', '!')

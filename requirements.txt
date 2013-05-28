@@ -1,1 +1,0 @@
-https://github.com/tOkeshu/spool/archive/master.zip#egg=spool-0.0.1
